@@ -1,11 +1,10 @@
-"""GDB — GNU Debugger wrapper."""
+"""GdbTool — gdb with peda/gef, run binary with input, capture crash info."""
 from __future__ import annotations
 
 import logging
 import os
 import re
 import tempfile
-
 from backend.tools.base import BaseTool, Finding, Severity, ToolCategory, ToolResult
 
 logger = logging.getLogger("nexus.tools.gdb")
@@ -21,24 +20,46 @@ class GdbTool(BaseTool):
             return ToolResult(success=False, error="Invalid params: 'binary' required.")
 
         binary: str = params["binary"]
-        commands: list[str] = params.get("commands", [
-            "info functions", "info variables", "checksec", "quit"
+        input_data: str = params.get("input", "")
+        commands: list[str] = params.get("commands", [])
+        timeout: int = int(params.get("timeout", 60))
+        cyclic_length: int = int(params.get("cyclic_length", 200))
+
+        # Build GDB command file
+        gdb_commands = [
+            "set pagination off",
+            "set confirm off",
+        ]
+
+        # Check for peda or gef
+        if os.path.exists(os.path.expanduser("~/.gdbinit")):
+            with open(os.path.expanduser("~/.gdbinit")) as f:
+                gdbinit = f.read()
+        else:
+            gdbinit = ""
+
+        gdb_commands.extend(commands or [
+            f"run <<< $(python3 -c \"print('A' * {cyclic_length})\")",
+            "bt",
+            "info registers",
+            "x/20x $esp",
+            "quit",
         ])
-        args: str = params.get("args", "")
-        timeout: int = int(params.get("timeout", 120))
-        core_file: str = params.get("core_file", "")
 
-        # Write GDB script
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".gdb", delete=False) as tmp:
-            for cmd in commands:
-                tmp.write(cmd + "\n")
-            gdb_script = tmp.name
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".gdb", delete=False) as cf:
+            cf.write("\n".join(gdb_commands))
+            cmd_file = cf.name
 
-        cmd = ["gdb", "-batch", "-x", gdb_script, binary]
-        if args:
-            cmd += ["--args"] + args.split()
-        if core_file:
-            cmd.append(core_file)
+        if input_data:
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".input", delete=False) as inf:
+                inf.write(input_data)
+                input_file = inf.name
+        else:
+            input_file = None
+
+        cmd = ["gdb", "-q", "-x", cmd_file, "--args", binary]
+        if input_file:
+            cmd = ["gdb", "-q", "-x", cmd_file, "--args", binary, f"< {input_file}"]
 
         output_file = None
         if self._job_id and self._session_id:
@@ -49,67 +70,71 @@ class GdbTool(BaseTool):
 
         try:
             returncode, raw = await self._execute(cmd, timeout=timeout, output_file=output_file)
+            findings = self.parse(raw)
         finally:
-            try:
-                os.unlink(gdb_script)
-            except OSError:
-                pass
+            os.unlink(cmd_file)
+            if input_file:
+                try:
+                    os.unlink(input_file)
+                except Exception:
+                    pass
 
-        findings = self.parse(raw)
         return ToolResult(success=True, output=raw, findings=findings)
 
     def parse(self, raw_output: str) -> list[Finding]:
         findings: list[Finding] = []
-        seen: set[str] = set()
+        lower = raw_output.lower()
 
-        # Checksec output from pwndbg/gef
-        nx_pattern = re.compile(r"NX\s+[:-]\s+(enabled|disabled)", re.IGNORECASE)
-        pie_pattern = re.compile(r"PIE\s+[:-]\s+(enabled|disabled)", re.IGNORECASE)
-        stack_canary = re.compile(r"(?:Stack.)?Canary\s+[:-]\s+(found|not found|enabled|disabled)", re.IGNORECASE)
-        relro_pattern = re.compile(r"RELRO\s+[:-]\s+(Full|Partial|No\s+RELRO)", re.IGNORECASE)
+        # Detect crashes / SIGSEGV
+        if "sigsegv" in lower or "segmentation fault" in lower:
+            # Try to extract offset if EIP contains cyclic pattern
+            eip_match = re.search(r"eip\s*=\s*(0x[0-9a-f]+)", raw_output, re.IGNORECASE)
+            rip_match = re.search(r"rip\s*=\s*(0x[0-9a-f]+)", raw_output, re.IGNORECASE)
 
-        for line in raw_output.splitlines():
-            nx_m = nx_pattern.search(line)
-            if nx_m:
-                enabled = "enabled" in nx_m.group(1).lower()
-                if not enabled:
-                    findings.append(Finding(
-                        title="NX (Non-Executable Stack) Disabled",
-                        severity=Severity.HIGH,
-                        description="The binary has the NX bit disabled — shellcode can be executed on the stack.",
-                        affected_asset="binary",
-                        evidence=line,
-                        remediation="Compile with -z noexecstack. Use modern linker flags.",
-                    ))
+            register_val = ""
+            if eip_match:
+                register_val = f"EIP = {eip_match.group(1)}"
+            elif rip_match:
+                register_val = f"RIP = {rip_match.group(1)}"
 
-            pie_m = pie_pattern.search(line)
-            if pie_m:
-                enabled = "enabled" in pie_m.group(1).lower()
-                if not enabled:
-                    findings.append(Finding(
-                        title="PIE (Position Independent Executable) Disabled",
-                        severity=Severity.MEDIUM,
-                        description="PIE is disabled — binary loads at fixed address, easier to exploit.",
-                        affected_asset="binary",
-                        evidence=line,
-                        remediation="Compile with -fPIE -pie.",
-                    ))
+            findings.append(Finding(
+                title="Buffer Overflow / Segmentation Fault Detected",
+                severity=Severity.CRITICAL,
+                description=(
+                    "GDB detected a crash (SIGSEGV) during input fuzzing. "
+                    "This may indicate an exploitable buffer overflow.\n"
+                    + register_val
+                ),
+                evidence=raw_output[:2000],
+                remediation=(
+                    "Fix the buffer overflow: use safe string functions (strncpy, snprintf). "
+                    "Enable stack canaries (-fstack-protector), ASLR, and NX."
+                ),
+            ))
 
-            sc_m = stack_canary.search(line)
-            if sc_m:
-                state = sc_m.group(1).lower()
-                if "not found" in state or "disabled" in state:
-                    findings.append(Finding(
-                        title="Stack Canary Not Found",
-                        severity=Severity.HIGH,
-                        description="Stack canary is absent — stack buffer overflow exploitation is easier.",
-                        affected_asset="binary",
-                        evidence=line,
-                        remediation="Compile with -fstack-protector-all.",
-                    ))
+        if "sigabrt" in lower:
+            findings.append(Finding(
+                title="SIGABRT / Heap Corruption Detected",
+                severity=Severity.HIGH,
+                description="Program aborted, possibly due to heap corruption or assert failure.",
+                evidence=raw_output[:1000],
+            ))
+
+        if "double free" in lower or "heap overflow" in lower:
+            findings.append(Finding(
+                title="Heap Memory Corruption",
+                severity=Severity.CRITICAL,
+                description="Double free or heap overflow detected.",
+                evidence=raw_output[:1000],
+                remediation="Use memory-safe languages or sanitizers (AddressSanitizer).",
+            ))
+
+        # Extract backtrace
+        bt_match = re.search(r"(#\d+.*)", raw_output)
+        if bt_match and findings:
+            findings[-1].evidence += f"\n\nBacktrace snippet:\n{bt_match.group(1)}"
 
         return findings
 
     def validate_params(self, params: dict) -> bool:
-        binary = params.get("binary", "")
-        return bool(binary) and os.path.isfile(binary)
+        return bool(params.get("binary"))
