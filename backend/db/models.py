@@ -264,7 +264,7 @@ class GraphEdge(Base):
     target_node_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("graph_nodes.id", ondelete="CASCADE"), nullable=False
     )
-    relationship: Mapped[str] = mapped_column(String(128), nullable=False)
+    rel_type: Mapped[str] = mapped_column(String(128), nullable=False)
     confidence: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -272,10 +272,10 @@ class GraphEdge(Base):
 
     # Relationships
     source_node: Mapped[GraphNode] = relationship(
-        "GraphNode", foreign_keys=[source_node_id], back_populates="outgoing_edges"
+        "GraphNode", foreign_keys="[GraphEdge.source_node_id]", back_populates="outgoing_edges"
     )
     target_node: Mapped[GraphNode] = relationship(
-        "GraphNode", foreign_keys=[target_node_id], back_populates="incoming_edges"
+        "GraphNode", foreign_keys="[GraphEdge.target_node_id]", back_populates="incoming_edges"
     )
 
     __table_args__ = (

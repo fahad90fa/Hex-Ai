@@ -100,7 +100,7 @@ def _edge_to_response(e: GraphEdge) -> GraphEdgeResponse:
         id=e.id,
         source_node_id=e.source_node_id,
         target_node_id=e.target_node_id,
-        relationship=e.relationship,
+        relationship=e.rel_type,
         confidence=e.confidence,
         created_at=e.created_at,
     )
