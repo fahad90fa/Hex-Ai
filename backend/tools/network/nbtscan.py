@@ -1,4 +1,4 @@
-"""NbtscanTool — nbtscan {range}. Parse NetBIOS names/MACs."""
+"""NbtscanTool — nbtscan {target}. NetBIOS name scanner."""
 from __future__ import annotations
 
 import logging
@@ -16,11 +16,11 @@ class NbtscanTool(BaseTool):
 
     async def run(self, params: dict) -> ToolResult:
         if not self.validate_params(params):
-            return ToolResult(success=False, error="Invalid params: 'target' (IP or CIDR) required.")
+            return ToolResult(success=False, error="Invalid params: 'target' required.")
 
         target: str = params["target"]
-        verbose: bool = bool(params.get("verbose", False))
-        timeout: int = int(params.get("timeout", 120))
+        timeout: int = int(params.get("timeout", 60))
+        verbose: bool = bool(params.get("verbose", True))
 
         cmd = ["nbtscan"]
         if verbose:
@@ -40,67 +40,59 @@ class NbtscanTool(BaseTool):
 
     def parse(self, raw_output: str) -> list[Finding]:
         findings: list[Finding] = []
-        hosts: list[dict] = []
 
-        # nbtscan output: IP  NetBIOS Name  Server  User    MAC address
+        hosts: list[dict] = []
+        domain_controllers: list[str] = []
+
+        # nbtscan output: IP  NetBIOS_Name  Server  User  MAC
         for line in raw_output.splitlines():
-            # Skip headers
-            if line.startswith("IP") or line.startswith("-") or not line.strip():
+            # Typical verbose line: IP  Name <20>  UNIQUE  Registered
+            ip_match = re.match(r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})", line)
+            if not ip_match:
                 continue
 
-            # Parse space-separated: IP  name  type  user  mac
-            parts = re.split(r"\s{2,}", line.strip())
-            if len(parts) >= 2:
-                ip = parts[0]
-                name = parts[1] if len(parts) > 1 else ""
-                mac = parts[-1] if len(parts) > 3 else ""
+            ip = ip_match.group(1)
+            name_match = re.search(r"(\S+)\s+<(\w+)>\s+(UNIQUE|GROUP)", line)
+            if name_match:
+                name = name_match.group(1)
+                nb_code = name_match.group(2)
 
-                if re.match(r"^\d+\.\d+\.\d+\.\d+$", ip):
-                    hosts.append({"ip": ip, "name": name, "mac": mac})
+                host = {"ip": ip, "name": name, "nb_code": nb_code}
+                hosts.append(host)
 
-            # Verbose mode: single info per line
-            ip_match = re.search(r"(\d+\.\d+\.\d+\.\d+)", line)
-            nb_match = re.search(r"<(\w+)>", line)
-            if ip_match and nb_match and not any(h["ip"] == ip_match.group(1) for h in hosts):
-                hosts.append({"ip": ip_match.group(1), "name": nb_match.group(1), "mac": ""})
+                # 0x1C = Domain Controllers
+                if nb_code in ("1C", "1B"):
+                    domain_controllers.append(f"{ip} ({name})")
+
+        # MAC addresses
+        macs = re.findall(r"MAC:((?:[0-9a-f]{2}:){5}[0-9a-f]{2})", raw_output, re.IGNORECASE)
 
         if hosts:
-            host_list = "\n".join(
-                f"{h['ip']}\t{h['name']}\t{h.get('mac', '')}"
-                for h in hosts
-            )
+            unique_ips = list(set(h["ip"] for h in hosts))
+            evidence_lines = [f"{h['ip']}: {h['name']} <{h['nb_code']}> " for h in hosts[:20]]
+            if macs:
+                evidence_lines.append(f"MACs: {', '.join(macs[:5])}")
+
             findings.append(Finding(
-                title=f"NetBIOS Hosts Discovered: {len(hosts)}",
+                title=f"NetBIOS Scan: {len(unique_ips)} hosts discovered",
                 severity=Severity.INFO,
-                description=(
-                    f"nbtscan discovered {len(hosts)} hosts responding to NetBIOS queries.\n"
-                    "NetBIOS responses indicate Windows hosts and can reveal machine names and workgroups."
-                ),
-                evidence=host_list,
-                remediation=(
-                    "Disable NetBIOS over TCP/IP if not required (HKEY_LOCAL_MACHINE\\SYSTEM\\"
-                    "CurrentControlSet\\Services\\NetBT\\Parameters\\Interfaces)."
-                ),
+                description=f"nbtscan discovered {len(unique_ips)} hosts with NetBIOS names.",
+                evidence="\n".join(evidence_lines),
             ))
 
-            # Flag Domain Controllers
-            for h in hosts:
-                if "DC" in h.get("name", "").upper() or "PDC" in h.get("name", "").upper():
-                    findings.append(Finding(
-                        title=f"Domain Controller Identified: {h['ip']} ({h['name']})",
-                        severity=Severity.HIGH,
-                        description=f"Host {h['ip']} appears to be a Domain Controller based on NetBIOS name.",
-                        affected_asset=h["ip"],
-                        evidence=f"IP: {h['ip']}, NetBIOS: {h['name']}",
-                        remediation="Ensure DC is fully patched. Restrict unnecessary network exposure.",
-                    ))
+        if domain_controllers:
+            findings.append(Finding(
+                title=f"Domain Controller(s) Found: {', '.join(domain_controllers)}",
+                severity=Severity.HIGH,
+                description=(
+                    f"Found {len(domain_controllers)} Domain Controller(s) via NetBIOS. "
+                    "DCs are high-value targets."
+                ),
+                evidence="\n".join(domain_controllers),
+                remediation="Limit DC exposure. Ensure DCs are not accessible from untrusted network segments.",
+            ))
 
         return findings
 
     def validate_params(self, params: dict) -> bool:
-        target = params.get("target", "")
-        return bool(target) and (
-            self._is_valid_ip(target) or
-            self._is_valid_cidr(target) or
-            self._is_valid_domain(target)
-        )
+        return bool(params.get("target"))

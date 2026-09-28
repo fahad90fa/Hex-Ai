@@ -1,4 +1,4 @@
-"""Enum4linuxTool — enum4linux -a {target}. Parse users, shares, OS info."""
+"""Enum4linuxTool — enum4linux -a {target}. SMB enumeration."""
 from __future__ import annotations
 
 import logging
@@ -19,19 +19,10 @@ class Enum4linuxTool(BaseTool):
             return ToolResult(success=False, error="Invalid params: 'target' required.")
 
         target: str = params["target"]
-        username: str = params.get("username", "")
-        password: str = params.get("password", "")
-        workgroup: str = params.get("workgroup", "")
-        timeout: int = int(params.get("timeout", 300))
+        flags: list[str] = params.get("flags", ["-a"])
+        timeout: int = int(params.get("timeout", 120))
 
-        cmd = ["enum4linux", "-a"]
-        if username:
-            cmd += ["-u", username]
-        if password:
-            cmd += ["-p", password]
-        if workgroup:
-            cmd += ["-w", workgroup]
-        cmd.append(target)
+        cmd = ["enum4linux"] + flags + [target]
 
         output_file = None
         if self._job_id and self._session_id:
@@ -42,93 +33,71 @@ class Enum4linuxTool(BaseTool):
 
         returncode, raw = await self._execute(cmd, timeout=timeout, output_file=output_file)
         findings = self.parse(raw)
-        return ToolResult(success=True, output=raw, findings=findings)
+        return ToolResult(success=returncode == 0 or findings, output=raw, findings=findings)
 
     def parse(self, raw_output: str) -> list[Finding]:
         findings: list[Finding] = []
 
-        # Parse users
-        users: list[str] = []
-        for m in re.finditer(r"user:\[(\w+)\]", raw_output, re.IGNORECASE):
-            users.append(m.group(1))
-        # Also match: index: 0x1 RID: 0x3e9 acb: ... Account: username
-        for m in re.finditer(r"Account:\s+(\w+)", raw_output, re.IGNORECASE):
-            users.append(m.group(1))
-        users = list(dict.fromkeys(users))  # deduplicate
-
-        if users:
+        # Null session
+        if re.search(r"null session", raw_output, re.IGNORECASE) and \
+           re.search(r"allowed|successful", raw_output, re.IGNORECASE):
             findings.append(Finding(
-                title=f"SMB Users Enumerated: {len(users)} accounts",
-                severity=Severity.MEDIUM,
-                description=f"Enum4linux enumerated {len(users)} user accounts via SMB/RPC.",
-                affected_asset=raw_output.split()[0] if raw_output else "",
-                evidence="\n".join(users[:30]),
-                remediation=(
-                    "Restrict null session access. "
-                    "Disable SMBv1. Configure RestrictAnonymous=2."
-                ),
+                title="SMB Null Session Allowed",
+                severity=Severity.HIGH,
+                description="Anonymous/null SMB sessions are allowed on this host.",
+                evidence=re.search(r".{0,100}null session.{0,100}", raw_output, re.IGNORECASE).group(0).strip(),
+                remediation="Disable null sessions: set RestrictAnonymous=1 or 2 in the registry.",
             ))
 
-        # Parse shares
-        shares: list[str] = []
-        for m in re.finditer(r"Sharename\s+Type\s+Comment.*?\n((?:.*?\n)+?)(?:\n|$)", raw_output, re.IGNORECASE | re.MULTILINE):
-            block = m.group(1)
-            for line in block.splitlines():
-                parts = line.split()
-                if parts and not parts[0].startswith("-"):
-                    shares.append(parts[0])
+        # Users found
+        users = re.findall(r"user:\[([^\]]+)\]", raw_output, re.IGNORECASE)
+        if users:
+            findings.append(Finding(
+                title=f"SMB Users Enumerated: {len(users)} users",
+                severity=Severity.MEDIUM,
+                description=f"Enum4linux enumerated {len(users)} users via SMB/RPC.",
+                evidence="\n".join(users[:20]),
+                remediation="Restrict anonymous account enumeration.",
+            ))
 
-        # Simpler share pattern
-        for m in re.finditer(r"\s+(\w+)\s+Disk\s+", raw_output):
-            shares.append(m.group(1))
-        shares = list(dict.fromkeys(shares))
-
+        # Shares found
+        shares = re.findall(r"Mapping:\s+(\S+)", raw_output)
+        writable_shares = re.findall(r"mapping:\s*(\S+).*writable", raw_output, re.IGNORECASE)
         if shares:
             findings.append(Finding(
-                title=f"SMB Shares Discovered: {len(shares)}",
-                severity=Severity.MEDIUM,
-                description=f"Found {len(shares)} SMB shares: {', '.join(shares[:10])}",
-                evidence="\n".join(shares),
-                remediation="Restrict share permissions. Remove unnecessary shares.",
+                title=f"SMB Shares Discovered: {', '.join(shares[:10])}",
+                severity=Severity.MEDIUM if not writable_shares else Severity.HIGH,
+                description=f"Found {len(shares)} SMB shares.",
+                evidence="\n".join(shares[:20]),
+                remediation="Review share permissions and restrict access.",
             ))
 
         # Password policy
-        if "minimum password length" in raw_output.lower():
-            m = re.search(r"minimum password length:\s*(\d+)", raw_output, re.IGNORECASE)
-            if m:
-                min_len = int(m.group(1))
-                if min_len < 8:
+        if re.search(r"password policy", raw_output, re.IGNORECASE):
+            pw_section = re.search(r"(password policy.*?)(?=\[\+\]|$)", raw_output, re.IGNORECASE | re.DOTALL)
+            if pw_section:
+                pw_text = pw_section.group(0)[:500]
+                if re.search(r"minimum password length:\s*[0-4]\b", pw_text, re.IGNORECASE) or \
+                   re.search(r"password history count:\s*[0-2]\b", pw_text, re.IGNORECASE):
                     findings.append(Finding(
-                        title=f"Weak Password Policy: Min Length {min_len}",
+                        title="Weak SMB Password Policy",
                         severity=Severity.MEDIUM,
-                        description=f"Domain minimum password length is only {min_len} characters.",
-                        evidence=f"Minimum password length: {min_len}",
-                        remediation="Set minimum password length to at least 12 characters.",
+                        description="The domain password policy is weak.",
+                        evidence=pw_text,
+                        remediation="Enforce minimum password length >=12, complexity requirements, history>=5.",
                     ))
 
-        # Null session
-        if "null session" in raw_output.lower() and "established" in raw_output.lower():
-            findings.append(Finding(
-                title="Null Session Permitted",
-                severity=Severity.HIGH,
-                description="Server allows null (unauthenticated) SMB sessions.",
-                evidence="Null session established",
-                remediation="Set RestrictAnonymous=2 and RestrictNullSessAccess=1 in registry.",
-            ))
-
         # OS info
-        os_match = re.search(r"OS:\s*([^\n]+)", raw_output, re.IGNORECASE)
+        os_match = re.search(r"OS:\[([^\]]+)\]", raw_output)
         if os_match:
-            os_info = os_match.group(1).strip()
             findings.append(Finding(
-                title=f"OS Detected: {os_info}",
+                title=f"Operating System Identified: {os_match.group(1)}",
                 severity=Severity.INFO,
-                description=f"Enum4linux identified OS via SMB: {os_info}",
-                evidence=os_info,
+                description=f"Target OS: {os_match.group(1)}",
+                evidence=os_match.group(0),
             ))
 
         return findings
 
     def validate_params(self, params: dict) -> bool:
-        target = params.get("target", "")
-        return bool(target) and (self._is_valid_ip(target) or self._is_valid_domain(target))
+        return bool(params.get("target"))

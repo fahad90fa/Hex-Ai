@@ -1,4 +1,4 @@
-"""SmbmapTool — smbmap -H {target}. Parse accessible shares."""
+"""SmbmapTool — smbmap -H {target}. SMB share permission mapping."""
 from __future__ import annotations
 
 import logging
@@ -22,23 +22,21 @@ class SmbmapTool(BaseTool):
         username: str = params.get("username", "")
         password: str = params.get("password", "")
         domain: str = params.get("domain", "")
-        command: str = params.get("command", "")
+        share: str = params.get("share", "")
+        timeout: int = int(params.get("timeout", 60))
         recursive: bool = bool(params.get("recursive", False))
-        timeout: int = int(params.get("timeout", 120))
 
         cmd = ["smbmap", "-H", target]
         if username:
             cmd += ["-u", username]
-        else:
-            cmd += ["-u", ""]  # null session
         if password:
             cmd += ["-p", password]
         if domain:
             cmd += ["-d", domain]
-        if command:
-            cmd += ["-x", command]
+        if share:
+            cmd += ["-s", share]
         if recursive:
-            cmd += ["-R"]
+            cmd += ["-r"]
 
         output_file = None
         if self._job_id and self._session_id:
@@ -49,82 +47,62 @@ class SmbmapTool(BaseTool):
 
         returncode, raw = await self._execute(cmd, timeout=timeout, output_file=output_file)
         findings = self.parse(raw)
-        return ToolResult(success=True, output=raw, findings=findings)
+        return ToolResult(success=bool(findings) or returncode == 0, output=raw, findings=findings)
 
     def parse(self, raw_output: str) -> list[Finding]:
         findings: list[Finding] = []
 
-        # smbmap output: share_name  permissions  comment
-        # Example: //192.168.1.1/ADMIN$  [NO ACCESS]
-        # Example: //192.168.1.1/C$      [READ, WRITE]
-        read_write_shares: list[str] = []
-        read_only_shares: list[str] = []
-        no_access_shares: list[str] = []
+        # Parse share lines: share_name  READ,WRITE  comments
+        share_pattern = re.compile(
+            r"\s+(\S+)\s+(READ(?:,WRITE)?|WRITE(?:,READ)?|NO ACCESS)\s+(.*)",
+            re.IGNORECASE,
+        )
 
-        share_pattern = re.compile(r"//[\d\w\.\-]+/(\w+)\s+(.+)")
-        # Also: sharename  READ ONLY / READ, WRITE
-        perm_pattern = re.compile(r"(\w[\w\$]+)\s+(READ ONLY|READ, WRITE|NO ACCESS|READ/WRITE|READ \+ WRITE)", re.IGNORECASE)
+        writable_shares: list[str] = []
+        readable_shares: list[str] = []
+        no_access_shares: list[str] = []
 
         for line in raw_output.splitlines():
             m = share_pattern.search(line)
             if m:
-                share = m.group(1)
+                share_name = m.group(1)
                 perms = m.group(2).upper()
-                if "READ" in perms and "WRITE" in perms:
-                    read_write_shares.append(share)
+                if "WRITE" in perms:
+                    writable_shares.append(f"{share_name} ({perms})")
                 elif "READ" in perms:
-                    read_only_shares.append(share)
-                elif "NO ACCESS" in perms:
-                    no_access_shares.append(share)
-                continue
+                    readable_shares.append(f"{share_name} ({perms})")
+                else:
+                    no_access_shares.append(share_name)
 
-            m2 = perm_pattern.search(line)
-            if m2:
-                share = m2.group(1)
-                perms = m2.group(2).upper()
-                if "READ" in perms and "WRITE" in perms:
-                    read_write_shares.append(share)
-                elif "READ" in perms:
-                    read_only_shares.append(share)
-
-        if read_write_shares:
+        if writable_shares:
             findings.append(Finding(
-                title=f"Writable SMB Shares: {', '.join(read_write_shares)}",
+                title=f"Writable SMB Shares: {', '.join(writable_shares[:5])}",
                 severity=Severity.HIGH,
-                description=(
-                    f"SmbMap found {len(read_write_shares)} writable SMB shares: "
-                    f"{', '.join(read_write_shares)}"
-                ),
-                affected_asset=raw_output.split()[0] if raw_output else "",
-                evidence="\n".join(read_write_shares),
-                remediation=(
-                    "Remove write permissions from shares that don't require them. "
-                    "Audit share ACLs regularly."
-                ),
+                description=f"Found {len(writable_shares)} writable SMB shares.",
+                evidence="\n".join(writable_shares),
+                remediation="Remove write permissions from non-admin shares.",
             ))
 
-        if read_only_shares:
+        if readable_shares:
             findings.append(Finding(
-                title=f"Readable SMB Shares: {', '.join(read_only_shares[:5])}",
+                title=f"Readable SMB Shares: {', '.join(readable_shares[:5])}",
                 severity=Severity.MEDIUM,
-                description=f"SmbMap found {len(read_only_shares)} readable SMB shares.",
-                evidence="\n".join(read_only_shares),
-                remediation="Verify that readable shares don't expose sensitive data.",
+                description=f"{len(readable_shares)} SMB shares are readable.",
+                evidence="\n".join(readable_shares),
+                remediation="Review share contents for sensitive data. Restrict read access.",
             ))
 
-        # Check for command execution result
-        if "command" in raw_output.lower() and len(raw_output) > 200:
-            if "nt authority\\system" in raw_output.lower() or "nt authority\\network service" in raw_output.lower():
-                findings.append(Finding(
-                    title="SMB Command Execution Successful",
-                    severity=Severity.CRITICAL,
-                    description="SmbMap executed a command via SMB with elevated privileges.",
-                    evidence=raw_output[:1000],
-                    remediation="Disable SMB command execution. Apply principle of least privilege.",
-                ))
+        # Command execution
+        if re.search(r"NT AUTHORITY\\SYSTEM|command executed", raw_output, re.IGNORECASE):
+            findings.append(Finding(
+                title="SMB Command Execution as SYSTEM",
+                severity=Severity.CRITICAL,
+                description="smbmap achieved command execution with NT AUTHORITY\\SYSTEM privileges.",
+                evidence=re.search(r".{0,200}(?:SYSTEM|command executed).{0,200}", raw_output, re.IGNORECASE).group(0).strip(),
+                remediation="Immediately patch the SMB service and change all credentials.",
+            ))
 
         return findings
 
     def validate_params(self, params: dict) -> bool:
-        target = params.get("target", "")
-        return bool(target) and (self._is_valid_ip(target) or self._is_valid_domain(target))
+        return bool(params.get("target"))

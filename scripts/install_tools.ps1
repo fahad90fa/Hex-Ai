@@ -23,7 +23,7 @@ function Write-Warn {
     Write-Host "[nexus] WARNING: $Message" -ForegroundColor Yellow
 }
 
-# ─── Chocolatey ───────────────────────────────────────────────────────────────
+# ─── Chocolatey ──────────────────────────────────────────────────────────────────
 function Install-Chocolatey {
     if (Get-Command choco -ErrorAction SilentlyContinue) {
         Write-Log "Chocolatey already installed"
@@ -44,7 +44,7 @@ function choco-install {
     }
 }
 
-# ─── WinGet ───────────────────────────────────────────────────────────────────
+# ─── WinGet ─────────────────────────────────────────────────────────────────────
 function winget-install {
     param([string[]]$Packages)
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
@@ -58,7 +58,7 @@ function winget-install {
     }
 }
 
-# ─── Base tools via Chocolatey ────────────────────────────────────────────────
+# ─── Base tools via Chocolatey ─────────────────────────────────────────────────────────────
 function Install-BaseTools {
     Write-Log "Installing base tools via Chocolatey..."
     choco-install @(
@@ -77,7 +77,7 @@ function Install-BaseTools {
     )
 }
 
-# ─── Security tools via Chocolatey ────────────────────────────────────────────
+# ─── Security tools via Chocolatey ───────────────────────────────────────────────────────────
 function Install-SecurityTools {
     Write-Log "Installing security tools via Chocolatey..."
     choco-install @(
@@ -96,7 +96,7 @@ function Install-SecurityTools {
     )
 }
 
-# ─── Go tools ─────────────────────────────────────────────────────────────────
+# ─── Go tools ───────────────────────────────────────────────────────────────────────
 function Install-GoTools {
     if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
         Write-Warn "Go not found, skipping Go tools"
@@ -127,7 +127,7 @@ function Install-GoTools {
     }
 }
 
-# ─── Python tools ─────────────────────────────────────────────────────────────
+# ─── Python tools ─────────────────────────────────────────────────────────────────────
 function Install-PythonTools {
     if (-not (Get-Command pip -ErrorAction SilentlyContinue)) {
         Write-Warn "pip not found, skipping Python tools"
@@ -146,7 +146,7 @@ function Install-PythonTools {
     }
 }
 
-# ─── Ruby gems ────────────────────────────────────────────────────────────────
+# ─── Ruby gems ───────────────────────────────────────────────────────────────────────
 function Install-RubyTools {
     if (-not (Get-Command gem -ErrorAction SilentlyContinue)) {
         Write-Warn "gem not found, skipping Ruby tools"
@@ -157,7 +157,7 @@ function Install-RubyTools {
     gem install one_gadget --quiet 2>&1 | Out-Null
 }
 
-# ─── Wordlists ────────────────────────────────────────────────────────────────
+# ─── Wordlists ─────────────────────────────────────────────────────────────────────
 function Install-Wordlists {
     Write-Log "Installing wordlists..."
     $wordlistDir = "C:\wordlists"
@@ -177,7 +177,7 @@ function Install-Wordlists {
     }
 }
 
-# ─── Add to PATH ──────────────────────────────────────────────────────────────
+# ─── Add to PATH ─────────────────────────────────────────────────────────────────────
 function Update-PATH {
     Write-Log "Updating PATH..."
     $paths = @(
@@ -195,7 +195,7 @@ function Update-PATH {
     }
 }
 
-# ─── Main ─────────────────────────────────────────────────────────────────────
+# ─── Main ───────────────────────────────────────────────────────────────────────────
 Write-Log "NEXUS Tool Installer for Windows starting..."
 Write-Log "Running as Administrator: OK"
 

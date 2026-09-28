@@ -1,39 +1,42 @@
-#!/usr/bin/env python3
-# AI brain worker — runs LangGraph sessions from the job queue
+"""AI worker — pops sessions from nexus:ai:queue and runs the LangGraph brain."""
 import asyncio
 import json
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
+import logging
 import redis.asyncio as aioredis
 from backend.config import get_settings
 from backend.ai.brain import run_session
 
+logger = logging.getLogger("nexus.workers.ai")
+
 
 async def main():
-    redis = await aioredis.from_url(get_settings().redis_url, decode_responses=True)
-    print("[ai_worker] started, listening on nexus:ai:queue")
+    settings = get_settings()
+    redis = await aioredis.from_url(settings.redis_url, decode_responses=True)
+    logger.info("ai_worker: listening on nexus:ai:queue")
+
     while True:
         try:
             result = await redis.blpop("nexus:ai:queue", timeout=5)
             if not result:
                 continue
-            _, raw = result
-            job = json.loads(raw)
-            session_id = job.get("session_id")
-            target = job.get("target")
+
+            _, payload = result
+            data = json.loads(payload)
+            session_id = data.get("session_id")
+            target = data.get("target")
+
             if not session_id or not target:
-                print(f"[ai_worker] invalid job: {job}")
+                logger.warning(f"ai_worker: invalid payload: {payload[:100]}")
                 continue
-            print(f"[ai_worker] starting session {session_id} for target {target}")
-            asyncio.create_task(run_session(session_id, target))
-        except KeyboardInterrupt:
-            break
+
+            logger.info(f"ai_worker: starting session {session_id} for {target}")
+            asyncio.create_task(run_session(session_id=session_id, target=target))
+
         except Exception as e:
-            print(f"[ai_worker] error: {e}")
+            logger.error(f"ai_worker error: {e}")
             await asyncio.sleep(1)
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     asyncio.run(main())

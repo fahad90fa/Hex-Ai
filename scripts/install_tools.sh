@@ -27,7 +27,7 @@ install_pkg() {
     esac
 }
 
-# ─── Base dependencies ────────────────────────────────────────────────────────
+# ─── Base dependencies ───────────────────────────────────────────────────────────
 install_base() {
     log "Installing base dependencies..."
     case "$PKG_MGR" in
@@ -54,7 +54,7 @@ install_base() {
     esac
 }
 
-# ─── Go-based tools ───────────────────────────────────────────────────────────
+# ─── Go-based tools ────────────────────────────────────────────────────────────
 install_go_tools() {
     log "Installing Go-based tools..."
     export GOPATH="${HOME}/go"
@@ -84,7 +84,7 @@ install_go_tools() {
     done
 }
 
-# ─── Python-based tools ───────────────────────────────────────────────────────
+# ─── Python-based tools ──────────────────────────────────────────────────────────
 install_python_tools() {
     log "Installing Python-based tools..."
     pip3 install --quiet --break-system-packages \
@@ -100,14 +100,14 @@ install_python_tools() {
     pip3 install --quiet checksec 2>/dev/null || warn "checksec pip failed"
 }
 
-# ─── Ruby gems ────────────────────────────────────────────────────────────────
+# ─── Ruby gems ────────────────────────────────────────────────────────────
 install_ruby_tools() {
     log "Installing Ruby gems..."
     gem install wpscan 2>/dev/null && log "wpscan installed" || warn "wpscan gem failed"
     gem install one_gadget 2>/dev/null && log "one_gadget installed" || warn "one_gadget gem failed"
 }
 
-# ─── Rust/cargo tools ─────────────────────────────────────────────────────────
+# ─── Rust/cargo tools ───────────────────────────────────────────────────────────
 install_rust_tools() {
     log "Installing Rust tools..."
     if ! command -v cargo &>/dev/null; then
@@ -122,7 +122,7 @@ install_rust_tools() {
     done
 }
 
-# ─── Metasploit ───────────────────────────────────────────────────────────────
+# ─── Metasploit ────────────────────────────────────────────────────────────
 install_metasploit() {
     log "Installing Metasploit Framework..."
     if command -v msfconsole &>/dev/null; then
@@ -139,7 +139,7 @@ install_metasploit() {
     fi
 }
 
-# ─── Amass ────────────────────────────────────────────────────────────────────
+# ─── Amass ─────────────────────────────────────────────────────────────────
 install_amass() {
     log "Installing amass..."
     case "$PKG_MGR" in
@@ -149,7 +149,7 @@ install_amass() {
     [ -f "${GOPATH:-$HOME/go}/bin/amass" ] && cp "${GOPATH:-$HOME/go}/bin/amass" /usr/local/bin/ 2>/dev/null || true
 }
 
-# ─── Additional DNS tools ─────────────────────────────────────────────────────
+# ─── Additional DNS tools ───────────────────────────────────────────────────────────
 install_dns_tools() {
     log "Installing DNS tools..."
     install_pkg dnsutils 2>/dev/null || install_pkg bind-utils 2>/dev/null || true
@@ -164,7 +164,7 @@ install_dns_tools() {
     pip3 install --quiet fierce 2>/dev/null || warn "fierce pip install failed"
 }
 
-# ─── SMB/Windows tools ────────────────────────────────────────────────────────
+# ─── SMB/Windows tools ────────────────────────────────────────────────────────────
 install_smb_tools() {
     log "Installing SMB/Windows tools..."
     install_pkg smbmap 2>/dev/null || pip3 install smbmap 2>/dev/null || warn "smbmap install failed"
@@ -177,7 +177,7 @@ install_smb_tools() {
     fi
 }
 
-# ─── Reversing tools ─────────────────────────────────────────────────────────
+# ─── Reversing tools ────────────────────────────────────────────────────────────
 install_reversing_tools() {
     log "Installing reversing tools..."
     install_pkg binwalk gdb 2>/dev/null || true
@@ -204,7 +204,7 @@ install_reversing_tools() {
     warn "checksec install failed"
 }
 
-# ─── Web tools ────────────────────────────────────────────────────────────────
+# ─── Web tools ────────────────────────────────────────────────────────────
 install_web_tools() {
     log "Installing web tools..."
 
@@ -234,7 +234,7 @@ install_web_tools() {
     go install github.com/hahwul/dalfox/v2@latest 2>/dev/null || warn "dalfox go install failed"
 }
 
-# ─── Wordlists ────────────────────────────────────────────────────────────────
+# ─── Wordlists ────────────────────────────────────────────────────────────
 install_wordlists() {
     log "Installing wordlists..."
     mkdir -p /usr/share/wordlists
@@ -264,7 +264,7 @@ install_wordlists() {
     fi
 }
 
-# ─── PATH setup ───────────────────────────────────────────────────────────────
+# ─── PATH setup ────────────────────────────────────────────────────────────────
 setup_path() {
     log "Setting up PATH..."
     PROFILE_FILE="${HOME}/.bashrc"
@@ -277,7 +277,7 @@ setup_path() {
     done
 }
 
-# ─── Main ─────────────────────────────────────────────────────────────────────
+# ─── Main ───────────────────────────────────────────────────────────────────
 main() {
     log "NEXUS Tool Installer starting..."
     detect_distro

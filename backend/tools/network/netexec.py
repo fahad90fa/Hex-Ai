@@ -1,4 +1,4 @@
-"""NetexecTool — netexec smb/ssh/winrm {target} -u {user} -p {pass}. Parse auth results."""
+"""NetexecTool — netexec smb/ssh/winrm {target}. Credential testing + command execution."""
 from __future__ import annotations
 
 import logging
@@ -19,37 +19,28 @@ class NetexecTool(BaseTool):
             return ToolResult(success=False, error="Invalid params: 'target' and 'protocol' required.")
 
         target: str = params["target"]
-        protocol: str = params.get("protocol", "smb").lower()
+        protocol: str = params.get("protocol", "smb")  # smb, ssh, winrm, ldap, ftp
         username: str = params.get("username", "")
         password: str = params.get("password", "")
-        userlist: str = params.get("userlist", "")
-        passlist: str = params.get("passlist", "")
-        hash_val: str = params.get("hash", "")
+        cred_file: str = params.get("cred_file", "")
         command: str = params.get("command", "")
-        shares: bool = bool(params.get("shares", False))
-        local_auth: bool = bool(params.get("local_auth", False))
-        timeout: int = int(params.get("timeout", 300))
+        hash_: str = params.get("hash", "")
+        timeout: int = int(params.get("timeout", 120))
+        spray: bool = bool(params.get("spray", False))
 
         cmd = ["netexec", protocol, target]
-
         if username:
             cmd += ["-u", username]
-        elif userlist:
-            cmd += ["-u", userlist]
-
-        if hash_val:
-            cmd += ["-H", hash_val]
-        elif password:
+        if password:
             cmd += ["-p", password]
-        elif passlist:
-            cmd += ["-p", passlist]
-
-        if local_auth:
-            cmd.append("--local-auth")
+        elif hash_:
+            cmd += ["--hash", hash_]
+        if cred_file:
+            cmd += ["-u", cred_file, "-p", password or cred_file]
         if command:
             cmd += ["-x", command]
-        if shares:
-            cmd.append("--shares")
+        if spray:
+            cmd += ["--continue-on-success"]
 
         output_file = None
         if self._job_id and self._session_id:
@@ -65,65 +56,49 @@ class NetexecTool(BaseTool):
     def parse(self, raw_output: str) -> list[Finding]:
         findings: list[Finding] = []
 
-        # netexec output: SMB 192.168.1.1  445   DC01 [*] Windows 10 ... (Pwn3d!)
-        #                 SMB 192.168.1.1  445   DC01 [+] domain\user:pass (Pwn3d!)
-        # Success patterns
-        pwned_pattern = re.compile(r"(\w+)\s+([\d\.]+)\s+\d+\s+\w+\s+\[\+\]\s+(\S+)\s+\(Pwn3d!\)", re.IGNORECASE)
-        success_pattern = re.compile(r"\[\+\]\s+(\S+)\s+(\S+)", re.IGNORECASE)
-        info_pattern = re.compile(r"\[\*\]\s+(\w.*)", re.IGNORECASE)
+        # Pwn3d! — local admin
+        pwned_lines = [l for l in raw_output.splitlines() if "Pwn3d!" in l]
+        if pwned_lines:
+            findings.append(Finding(
+                title="Credentials Provide Local Admin Access (Pwn3d!)",
+                severity=Severity.CRITICAL,
+                description="netexec confirmed local administrator access with the provided credentials.",
+                evidence="\n".join(pwned_lines[:5]),
+                remediation="Rotate all compromised credentials immediately. Remove unnecessary local admin grants.",
+            ))
 
-        seen_creds: set[str] = set()
+        # Valid creds
+        valid_lines = [l for l in raw_output.splitlines()
+                       if re.search(r"\[\+\].*:.*", l) and "Pwn3d!" not in l]
+        if valid_lines:
+            findings.append(Finding(
+                title=f"Valid Credentials Found: {len(valid_lines)} accounts",
+                severity=Severity.HIGH,
+                description=f"netexec validated credentials for {len(valid_lines)} account(s).",
+                evidence="\n".join(valid_lines[:10]),
+                remediation="Change compromised passwords. Enforce MFA.",
+            ))
 
-        for line in raw_output.splitlines():
-            # Pwned (admin shell)
-            m = pwned_pattern.search(line)
-            if m:
-                proto = m.group(1)
-                host = m.group(2)
-                cred = m.group(3)
-                key = f"{host}:{cred}"
-                if key not in seen_creds:
-                    seen_creds.add(key)
-                    findings.append(Finding(
-                        title=f"Admin Access: {cred} on {host} ({proto})",
-                        severity=Severity.CRITICAL,
-                        description=(
-                            f"Netexec confirmed administrative access (Pwn3d!) on {host}.\n"
-                            f"Protocol: {proto}, Credential: {cred}"
-                        ),
-                        affected_asset=host,
-                        evidence=line,
-                        remediation=(
-                            "Immediately change compromised credentials. "
-                            "Enable MFA. Audit privileged accounts."
-                        ),
-                    ))
-                continue
+        # Command output
+        cmd_output = re.search(r"\[\+\] Executed command(.*?)(?=\[|$)", raw_output, re.DOTALL)
+        if cmd_output:
+            findings.append(Finding(
+                title="Remote Command Execution Successful",
+                severity=Severity.CRITICAL,
+                description="Remote command was executed on target system.",
+                evidence=cmd_output.group(0)[:500],
+                remediation="Revoke compromised credentials. Apply patches for exploited service.",
+            ))
 
-            # Valid login (non-admin)
-            if "[+]" in line and ("\\") in line:
-                m2 = success_pattern.search(line)
-                if m2:
-                    cred = m2.group(1)
-                    if cred not in seen_creds:
-                        seen_creds.add(cred)
-                        findings.append(Finding(
-                            title=f"Valid Credential: {cred}",
-                            severity=Severity.HIGH,
-                            description=f"Netexec found valid credential: {cred}",
-                            evidence=line,
-                            remediation="Change compromised password. Review authentication policies.",
-                        ))
-
-            # OS info
-            m3 = re.search(r"\[\*\]\s+Windows\s+[\w\s\.]+\(name:(\w+)\)", line, re.IGNORECASE)
-            if m3:
-                findings.append(Finding(
-                    title=f"Host Info: {m3.group(0).split('[*]')[1].strip()[:100]}",
-                    severity=Severity.INFO,
-                    description="Netexec identified Windows host information.",
-                    evidence=line,
-                ))
+        # Host info (even with no creds)
+        host_match = re.search(r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}).*?(Windows|Linux).*?(\d{4})", raw_output)
+        if host_match:
+            findings.append(Finding(
+                title=f"Host Information: {host_match.group(0)[:100]}",
+                severity=Severity.INFO,
+                description="netexec retrieved host information.",
+                evidence=host_match.group(0)[:200],
+            ))
 
         return findings
 

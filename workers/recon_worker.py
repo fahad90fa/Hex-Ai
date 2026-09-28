@@ -1,24 +1,22 @@
-#!/usr/bin/env python3
-# Dedicated worker that only processes RECON category jobs
+"""Recon worker process — 5 concurrent recon jobs."""
 import asyncio
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import logging
+from backend.core.worker_pool import WorkerPool
+from shared.types import ToolCategory
 
-from backend.core.orchestrator import WorkerPool
-from backend.tools.base import ToolCategory
+logger = logging.getLogger("nexus.workers.recon")
 
 
 async def main():
-    pool = WorkerPool(n_workers=5)
-    # filter to only RECON tools
-    pool.category_filter = ToolCategory.RECON
+    pool = WorkerPool(n_workers=5, category_filter=ToolCategory.RECON)
     await pool.start()
+    logger.info("recon_worker: 5 workers running")
     try:
         await asyncio.sleep(float("inf"))
-    except KeyboardInterrupt:
+    finally:
         await pool.stop()
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     asyncio.run(main())

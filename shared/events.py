@@ -8,7 +8,7 @@ from typing import Annotated, Any, Literal, Optional, Union
 from pydantic import BaseModel, Field
 
 
-# ─── Event Type Enum ──────────────────────────────────────────────────────────
+# ─── Event Type Enum ──────────────────────────────────────────────────
 
 class EventType(str, Enum):
     JOB_STARTED = "job.started"
@@ -29,7 +29,7 @@ class EventType(str, Enum):
     ANOMALY_DETECTED = "anomaly.detected"
 
 
-# ─── Base Event ───────────────────────────────────────────────────────────────
+# ─── Base Event ─────────────────────────────────────────────────────
 
 class BaseEvent(BaseModel):
     type: str
@@ -37,85 +37,74 @@ class BaseEvent(BaseModel):
     timestamp: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
 
 
-# ─── Job Events ───────────────────────────────────────────────────────────────
+# ─── Job Events ────────────────────────────────────────────────────
 
 class JobStartedEvent(BaseEvent):
     type: Literal["job.started"] = "job.started"
     data: dict = Field(default_factory=dict)
-    # data: {job_id, tool_name, params}
 
 
 class JobOutputEvent(BaseEvent):
     type: Literal["job.output"] = "job.output"
     data: dict = Field(default_factory=dict)
-    # data: {job_id, line}
 
 
 class JobCompletedEvent(BaseEvent):
     type: Literal["job.completed"] = "job.completed"
     data: dict = Field(default_factory=dict)
-    # data: {job_id, findings_count, duration_ms}
 
 
 class JobFailedEvent(BaseEvent):
     type: Literal["job.failed"] = "job.failed"
     data: dict = Field(default_factory=dict)
-    # data: {job_id, error}
 
 
-# ─── Finding Events ───────────────────────────────────────────────────────────
+# ─── Finding Events ──────────────────────────────────────────────────
 
 class FindingNewEvent(BaseEvent):
     type: Literal["finding.new"] = "finding.new"
     data: dict = Field(default_factory=dict)
-    # data: {id, title, severity, cvss_score, affected_asset, cve_ids}
 
 
-# ─── Graph Events ─────────────────────────────────────────────────────────────
+# ─── Graph Events ────────────────────────────────────────────────────
 
 class GraphNodeAddedEvent(BaseEvent):
     type: Literal["graph.node_added"] = "graph.node_added"
     data: dict = Field(default_factory=dict)
-    # data: {id, label, type, properties}
 
 
 class GraphEdgeAddedEvent(BaseEvent):
     type: Literal["graph.edge_added"] = "graph.edge_added"
     data: dict = Field(default_factory=dict)
-    # data: {source_id, target_id, relationship, confidence}
 
 
-# ─── AI Events ────────────────────────────────────────────────────────────────
+# ─── AI Events ──────────────────────────────────────────────────────
 
 class AIDecisionEvent(BaseEvent):
     type: Literal["ai.decision"] = "ai.decision"
     data: dict = Field(default_factory=dict)
-    # data: {node, tool, reasoning, confidence, job_id}
 
 
-# ─── CVE/Exploit Events ───────────────────────────────────────────────────────
+# ─── CVE/Exploit Events ──────────────────────────────────────────────────
 
 class CveMatchEvent(BaseEvent):
     type: Literal["cve.match"] = "cve.match"
     data: dict = Field(default_factory=dict)
-    # data: {cve_id, service, severity, has_exploit, exploitable}
 
 
 class PayloadEvasionEvent(BaseEvent):
     type: Literal["payload.evasion"] = "payload.evasion"
     data: dict = Field(default_factory=dict)
-    # data: {iteration, av_score, payload_path, mutation_type}
 
 
-# ─── Report Events ────────────────────────────────────────────────────────────
+# ─── Report Events ────────────────────────────────────────────────────
 
 class ReportReadyEvent(BaseEvent):
     type: Literal["report.ready"] = "report.ready"
     data: dict = Field(default_factory=dict)
-    # data: {html_path, pdf_path, findings_count, executive_summary_preview}
 
 
-# ─── Session Events ───────────────────────────────────────────────────────────
+# ─── Session Events ────────────────────────────────────────────────────
 
 class SessionStartedEvent(BaseEvent):
     type: Literal["session.started"] = "session.started"
@@ -132,21 +121,19 @@ class SessionFailedEvent(BaseEvent):
     data: dict = Field(default_factory=dict)
 
 
-# ─── Phase Event ──────────────────────────────────────────────────────────────
+# ─── Phase Event ───────────────────────────────────────────────────────
 
 class PhaseChangedEvent(BaseEvent):
     type: Literal["phase.changed"] = "phase.changed"
     data: dict = Field(default_factory=dict)
-    # data: {old_phase, new_phase}
 
 
 class AnomalyDetectedEvent(BaseEvent):
     type: Literal["anomaly.detected"] = "anomaly.detected"
     data: dict = Field(default_factory=dict)
-    # data: {type, description, severity}
 
 
-# ─── Union discriminator ──────────────────────────────────────────────────────
+# ─── Union discriminator ──────────────────────────────────────────────────
 
 WSEvent = Annotated[
     Union[

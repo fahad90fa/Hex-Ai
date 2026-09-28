@@ -7,7 +7,7 @@ from typing import Any, Optional, Union
 from pydantic import BaseModel, Field
 
 
-# ─── Enumerations ─────────────────────────────────────────────────────────────
+# ─── Enumerations ─────────────────────────────────────────────────
 
 class SessionStatus(str, Enum):
     PENDING = "PENDING"
@@ -57,7 +57,7 @@ class ToolCategory(str, Enum):
     NETWORK = "NETWORK"
 
 
-# ─── Session ──────────────────────────────────────────────────────────────────
+# ─── Session ───────────────────────────────────────────────────
 
 class SessionCreate(BaseModel):
     target: str = Field(..., description="Target domain, IP, or CIDR range")
@@ -77,7 +77,7 @@ class SessionResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# ─── Jobs ─────────────────────────────────────────────────────────────────────
+# ─── Jobs ──────────────────────────────────────────────────────
 
 class JobCreate(BaseModel):
     session_id: str
@@ -99,7 +99,7 @@ class JobResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# ─── Findings ─────────────────────────────────────────────────────────────────
+# ─── Findings ───────────────────────────────────────────────────
 
 class FindingCreate(BaseModel):
     session_id: str
@@ -142,7 +142,7 @@ class FindingUpdate(BaseModel):
     remediation: Optional[str] = None
 
 
-# ─── Reports ──────────────────────────────────────────────────────────────────
+# ─── Reports ───────────────────────────────────────────────────
 
 class ReportCreate(BaseModel):
     session_id: str
@@ -162,7 +162,7 @@ class ReportResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# ─── Graph ────────────────────────────────────────────────────────────────────
+# ─── Graph ──────────────────────────────────────────────────────
 
 class GraphNodeResponse(BaseModel):
     id: str
@@ -185,7 +185,7 @@ class GraphEdgeResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# ─── AI ───────────────────────────────────────────────────────────────────────
+# ─── AI ──────────────────────────────────────────────────────────
 
 class AIDecisionResponse(BaseModel):
     node: str

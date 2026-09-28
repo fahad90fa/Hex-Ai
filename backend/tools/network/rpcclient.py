@@ -1,4 +1,4 @@
-"""RpcclientTool — rpcclient -U {user}%{pass} {target} -c {command}. Parse user/group enums."""
+"""RpcclientTool — rpcclient -U '' -N {target}. RPC null session enumeration."""
 from __future__ import annotations
 
 import logging
@@ -7,6 +7,16 @@ import re
 from backend.tools.base import BaseTool, Finding, Severity, ToolCategory, ToolResult
 
 logger = logging.getLogger("nexus.tools.rpcclient")
+
+
+_RPC_COMMANDS = """
+srvinfo
+domaininfo
+enumdomains
+enumdomusers
+enumdomgroups
+getdompwinfo
+"""
 
 
 class RpcclientTool(BaseTool):
@@ -21,16 +31,11 @@ class RpcclientTool(BaseTool):
         target: str = params["target"]
         username: str = params.get("username", "")
         password: str = params.get("password", "")
-        commands: list[str] = params.get("commands", [
-            "enumdomusers",
-            "enumdomgroups",
-            "querydominfo",
-            "getdompwinfo",
-        ])
-        timeout: int = int(params.get("timeout", 120))
+        commands: list[str] = params.get("commands", _RPC_COMMANDS.strip().splitlines())
+        timeout: int = int(params.get("timeout", 60))
 
-        auth_str = f"{username}%{password}" if username else "%"
-        cmd = ["rpcclient", "-U", auth_str, target, "-c", ";".join(commands), "-N"]
+        creds = f"{username}%{password}" if username else "%"
+        cmd = ["rpcclient", target, "-U", creds, "-N", "-c", ";".join(commands)]
 
         output_file = None
         if self._job_id and self._session_id:
@@ -46,78 +51,53 @@ class RpcclientTool(BaseTool):
     def parse(self, raw_output: str) -> list[Finding]:
         findings: list[Finding] = []
 
-        # Parse users: user:[Administrator] rid:[0x1f4]
-        users: list[str] = []
-        for m in re.finditer(r"user:\[(\w+)\]\s+rid:\[(0x[\da-fA-F]+)\]", raw_output):
-            users.append(m.group(1))
-
-        if users:
+        # Check for null session success
+        if re.search(r"Domain=\.+\.+Server=", raw_output, re.IGNORECASE) or \
+           re.search(r"srvinfo|server info", raw_output, re.IGNORECASE):
             findings.append(Finding(
-                title=f"Domain Users Enumerated via RPC: {len(users)} accounts",
-                severity=Severity.MEDIUM,
-                description=(
-                    f"rpcclient enumerated {len(users)} domain user accounts via MS-SAMR.\n"
-                    "This includes administrator and service accounts."
-                ),
-                evidence="\n".join(users[:30]),
-                remediation=(
-                    "Restrict MS-SAMR access using RestrictRemoteSAM registry key. "
-                    "Require authentication for null sessions."
-                ),
+                title="RPC Null Session Successful",
+                severity=Severity.HIGH,
+                description="Anonymous RPC null session was accepted by the target.",
+                evidence=raw_output[:300],
+                remediation="Restrict anonymous RPC access via registry: RestrictAnonymous=2.",
             ))
 
-            # Look for interesting accounts
-            interesting = [u for u in users if any(
-                k in u.lower() for k in ["admin", "backup", "service", "svc", "test", "temp"]
-            )]
-            if interesting:
-                findings.append(Finding(
-                    title=f"Privileged/Service Accounts Found: {', '.join(interesting[:5])}",
-                    severity=Severity.HIGH,
-                    description=f"Found {len(interesting)} potentially privileged accounts.",
-                    evidence="\n".join(interesting),
-                    remediation="Ensure service accounts use strong passwords and follow least-privilege.",
-                ))
+        # Users
+        users = re.findall(r"user:\[([^\]]+)\].*rid:\[(0x[0-9a-f]+)\]", raw_output, re.IGNORECASE)
+        if users:
+            findings.append(Finding(
+                title=f"RPC User Enumeration: {len(users)} users found",
+                severity=Severity.MEDIUM,
+                description=f"RPC anonymous session enumerated {len(users)} domain users.",
+                evidence="\n".join(f"{u[0]} (RID: {u[1]})" for u in users[:20]),
+                remediation="Restrict user enumeration via RPC.",
+            ))
 
-        # Parse groups
-        groups: list[str] = []
-        for m in re.finditer(r"group:\[([^\]]+)\]\s+rid:\[", raw_output):
-            groups.append(m.group(1))
-
+        # Groups
+        groups = re.findall(r"group:\[([^\]]+)\].*rid:\[(0x[0-9a-f]+)\]", raw_output, re.IGNORECASE)
         if groups:
             findings.append(Finding(
-                title=f"Domain Groups Enumerated: {len(groups)} groups",
-                severity=Severity.LOW,
-                description=f"rpcclient enumerated {len(groups)} domain groups.",
-                evidence="\n".join(groups[:20]),
+                title=f"RPC Group Enumeration: {len(groups)} groups",
+                severity=Severity.INFO,
+                description=f"Found {len(groups)} domain groups via RPC.",
+                evidence="\n".join(f"{g[0]} (RID: {g[1]})" for g in groups[:20]),
             ))
 
         # Password policy
-        pw_min = re.search(r"min_password_length:\s*(\d+)", raw_output)
-        pw_history = re.search(r"password_history:\s*(\d+)", raw_output)
-        if pw_min:
-            min_len = int(pw_min.group(1))
-            if min_len < 8:
-                findings.append(Finding(
-                    title=f"Weak Password Policy: Minimum Length {min_len}",
-                    severity=Severity.MEDIUM,
-                    description=f"Domain password policy requires only {min_len} character minimum.",
-                    evidence=f"min_password_length: {min_len}",
-                    remediation="Set minimum password length to at least 12 characters.",
-                ))
-
-        # Null session
-        if "NT_STATUS_ACCESS_DENIED" not in raw_output and users:
+        pw_match = re.search(
+            r"(min password length.+?max password age.+?)(?=\n\n|$)",
+            raw_output, re.IGNORECASE | re.DOTALL
+        )
+        if pw_match:
+            pw_text = pw_match.group(0)[:400]
             findings.append(Finding(
-                title="RPC Null Session Permitted",
-                severity=Severity.HIGH,
-                description="Server allowed unauthenticated RPC enumeration.",
-                evidence="Null session enumeration successful",
-                remediation="Configure RestrictAnonymous=2. Disable null sessions.",
+                title="Domain Password Policy via RPC",
+                severity=Severity.INFO,
+                description="Retrieved domain password policy via RPC null session.",
+                evidence=pw_text,
             ))
 
         return findings
 
     def validate_params(self, params: dict) -> bool:
-        target = params.get("target", "")
-        return bool(target) and (self._is_valid_ip(target) or self._is_valid_domain(target))
+        return bool(params.get("target"))
