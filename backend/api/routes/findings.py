@@ -101,7 +101,7 @@ async def update_finding(
 async def delete_finding(
     finding_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-) -> None:
+):
     """Delete a finding."""
     result = await db.execute(select(Finding).where(Finding.id == finding_id))
     finding = result.scalar_one_or_none()

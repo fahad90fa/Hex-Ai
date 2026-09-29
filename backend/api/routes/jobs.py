@@ -81,7 +81,7 @@ async def get_job(
 async def kill_job(
     job_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-) -> None:
+):
     """Kill a running job."""
     result = await db.execute(select(Job).where(Job.id == job_id))
     job = result.scalar_one_or_none()

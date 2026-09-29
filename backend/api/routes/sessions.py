@@ -74,7 +74,7 @@ async def get_session(
 async def delete_session(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-) -> None:
+):
     """Stop and remove a session (cascades to jobs, findings, etc.)."""
     result = await db.execute(select(Session).where(Session.id == session_id))
     session = result.scalar_one_or_none()
