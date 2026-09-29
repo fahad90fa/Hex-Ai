@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { CheckCircle2, XCircle, Clock3, Loader2, StopCircle } from "lucide-react";
 import type { Job } from "../../api/jobs";
 import { useJobStore } from "../../store/jobStore";
@@ -52,7 +52,8 @@ const OutputModal: React.FC<OutputModalProps> = ({ job, lines, onClose }) => (
 
 export const JobStatus: React.FC<JobStatusProps> = ({ job }) => {
   const [modalOpen, setModalOpen] = useState(false);
-  const lines = useJobStore((s) => s.jobOutputs[job.id] ?? []);
+  const jobOutputs = useJobStore((s) => s.jobOutputs);
+  const lines = useMemo(() => jobOutputs[job.id] ?? [], [jobOutputs, job.id]);
 
   const iconMap: Record<string, React.ReactNode> = {
     QUEUED:    <Clock3 size={14} className="text-[var(--text-muted)]" />,
