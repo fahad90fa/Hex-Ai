@@ -1,9 +1,10 @@
 """Complete Pydantic v2 models for the NEXUS API."""
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional, Union
+from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 
@@ -23,6 +24,7 @@ class JobStatus(str, Enum):
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
+    KILLED = "KILLED"
     CANCELLED = "CANCELLED"
 
 
@@ -65,14 +67,16 @@ class SessionCreate(BaseModel):
 
 
 class SessionResponse(BaseModel):
-    id: str
+    id: uuid.UUID
     target: str
     status: SessionStatus
     started_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
     config: dict[str, Any] = Field(default_factory=dict)
     findings_count: int = 0
     jobs_count: int = 0
+    coverage_pct: Optional[float] = None
 
     model_config = {"from_attributes": True}
 
@@ -80,20 +84,22 @@ class SessionResponse(BaseModel):
 # ─── Jobs ──────────────────────────────────────────────────────
 
 class JobCreate(BaseModel):
-    session_id: str
+    session_id: uuid.UUID
     tool_name: str
     params: dict[str, Any] = Field(default_factory=dict)
 
 
 class JobResponse(BaseModel):
-    id: str
-    session_id: str
+    id: uuid.UUID
+    session_id: uuid.UUID
     tool_name: str
     status: JobStatus
     params: dict[str, Any] = Field(default_factory=dict)
-    output_tail: list[str] = Field(default_factory=list)
+    output_path: Optional[str] = None
+    output_tail: Optional[list[str]] = None
     started_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
     findings_count: int = 0
 
     model_config = {"from_attributes": True}
@@ -102,8 +108,8 @@ class JobResponse(BaseModel):
 # ─── Findings ───────────────────────────────────────────────────
 
 class FindingCreate(BaseModel):
-    session_id: str
-    job_id: Optional[str] = None
+    session_id: uuid.UUID
+    job_id: Optional[uuid.UUID] = None
     title: str
     description: str = ""
     severity: Severity = Severity.INFO
@@ -116,9 +122,9 @@ class FindingCreate(BaseModel):
 
 
 class FindingResponse(BaseModel):
-    id: str
-    session_id: str
-    job_id: Optional[str] = None
+    id: uuid.UUID
+    session_id: uuid.UUID
+    job_id: Optional[uuid.UUID] = None
     title: str
     description: str = ""
     severity: Severity
@@ -145,14 +151,14 @@ class FindingUpdate(BaseModel):
 # ─── Reports ───────────────────────────────────────────────────
 
 class ReportCreate(BaseModel):
-    session_id: str
+    session_id: uuid.UUID
     title: str = "NEXUS Penetration Test Report"
     template: str = Field(default="technical", description="executive|technical|bug_bounty")
 
 
 class ReportResponse(BaseModel):
-    id: str
-    session_id: str
+    id: uuid.UUID
+    session_id: uuid.UUID
     title: str
     template: str
     pdf_path: str = ""
@@ -165,8 +171,8 @@ class ReportResponse(BaseModel):
 # ─── Graph ──────────────────────────────────────────────────────
 
 class GraphNodeResponse(BaseModel):
-    id: str
-    session_id: str
+    id: uuid.UUID
+    session_id: uuid.UUID
     type: NodeType
     label: str
     properties: dict[str, Any] = Field(default_factory=dict)
@@ -176,9 +182,9 @@ class GraphNodeResponse(BaseModel):
 
 
 class GraphEdgeResponse(BaseModel):
-    id: str
-    source_node_id: str
-    target_node_id: str
+    id: uuid.UUID
+    source_node_id: uuid.UUID
+    target_node_id: uuid.UUID
     relationship: str
     confidence: float = 1.0
 
