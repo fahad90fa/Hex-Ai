@@ -19,8 +19,8 @@ from backend.api.routes import (
     ws,
 )
 from backend.config import settings
+from backend.api.routes.ws import ws_hub
 from backend.core.orchestrator import WorkerPool
-from backend.core.ws_hub import ws_hub
 from backend.db.session import init_db
 
 logger = logging.getLogger("nexus")
@@ -63,8 +63,8 @@ async def lifespan(app: FastAPI):
     logger.info("Neo4j connected.")
 
     # 4. Start worker pool
-    _worker_pool = WorkerPool(redis=_redis_client)
-    await _worker_pool.start(n_workers=10)
+    _worker_pool = WorkerPool(n_workers=10)
+    await _worker_pool.start()
     app.state.worker_pool = _worker_pool
     logger.info("Worker pool started (10 workers).")
 
