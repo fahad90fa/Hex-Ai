@@ -55,11 +55,11 @@ export const JobStatus: React.FC<JobStatusProps> = ({ job }) => {
   const lines = useJobStore((s) => s.jobOutputs[job.id] ?? []);
 
   const iconMap: Record<string, React.ReactNode> = {
-    queued:    <Clock3 size={14} className="text-[var(--text-muted)]" />,
-    running:   <Loader2 size={14} className="text-yellow-400 animate-spin" />,
-    completed: <CheckCircle2 size={14} className="text-emerald-400" />,
-    failed:    <XCircle size={14} className="text-red-400" />,
-    killed:    <StopCircle size={14} className="text-orange-400" />,
+    QUEUED:    <Clock3 size={14} className="text-[var(--text-muted)]" />,
+    RUNNING:   <Loader2 size={14} className="text-yellow-400 animate-spin" />,
+    COMPLETED: <CheckCircle2 size={14} className="text-emerald-400" />,
+    FAILED:    <XCircle size={14} className="text-red-400" />,
+    KILLED:    <StopCircle size={14} className="text-orange-400" />,
   };
 
   return (
@@ -72,7 +72,11 @@ export const JobStatus: React.FC<JobStatusProps> = ({ job }) => {
         <span className="flex-1 truncate font-medium text-[var(--text-primary)]">
           {job.tool_name}
         </span>
-        <span className="text-[var(--text-muted)]">{formatDuration(job.duration_ms)}</span>
+        <span className="text-[var(--text-muted)]">
+          {job.ended_at && job.started_at
+            ? formatDuration(new Date(job.ended_at).getTime() - new Date(job.started_at).getTime())
+            : "—"}
+        </span>
         {job.findings_count > 0 && (
           <span className="rounded-full bg-red-900/50 px-1.5 py-0.5 text-xs text-red-400">
             {job.findings_count} findings

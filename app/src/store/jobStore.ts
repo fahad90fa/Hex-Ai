@@ -76,7 +76,7 @@ export const useJobStore = create<JobStore>((set, get) => ({
   // ── Selectors ──
 
   activeJobs() {
-    return get().jobs.filter((j) => j.status === "running" || j.status === "queued");
+    return get().jobs.filter((j) => j.status === "RUNNING" || j.status === "QUEUED");
   },
 
   getOutput(jobId) {
@@ -87,7 +87,7 @@ export const useJobStore = create<JobStore>((set, get) => ({
     const { jobs } = get();
     if (!jobs.length) return 0;
     const done = jobs.filter(
-      (j) => j.status === "completed" || j.status === "failed" || j.status === "killed"
+      (j) => j.status === "COMPLETED" || j.status === "FAILED" || j.status === "KILLED"
     ).length;
     return Math.round((done / jobs.length) * 100);
   },

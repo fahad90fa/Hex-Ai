@@ -78,12 +78,15 @@ export function useWebSocket(sessionId: string | null): UseWebSocketReturn {
           break;
         }
         case "job.completed":
-        case "job.failed": {
+        case "job.failed":
+        case "job.killed": {
           const d = envelope.data as JobUpdateData;
-          updateJob(d.id, {
-            status: envelope.event === "job.completed" ? "completed" : "failed",
-            ...d,
-          });
+          const statusMap: Record<string, "COMPLETED" | "FAILED" | "KILLED"> = {
+            "job.completed": "COMPLETED",
+            "job.failed": "FAILED",
+            "job.killed": "KILLED",
+          };
+          updateJob(d.id, { status: statusMap[envelope.event], ...d });
           break;
         }
         default:

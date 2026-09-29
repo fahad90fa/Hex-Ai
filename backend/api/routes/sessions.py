@@ -16,6 +16,16 @@ from backend.shared_types import SessionCreate, SessionResponse
 router = APIRouter()
 
 
+@router.get("/sessions", response_model=list[SessionResponse])
+async def list_sessions(
+    db: AsyncSession = Depends(get_db),
+) -> list[SessionResponse]:
+    """List all sessions, newest first."""
+    result = await db.execute(select(Session).order_by(Session.created_at.desc()))
+    sessions = result.scalars().all()
+    return [_to_response(s, jobs_count=0, findings_count=0) for s in sessions]
+
+
 @router.post("/sessions", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
 async def create_session(
     body: SessionCreate,

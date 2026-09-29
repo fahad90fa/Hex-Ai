@@ -75,9 +75,9 @@ export default function App() {
   // ── Backend health check ───────────────────────────────────────────────────
   const checkBackend = () => {
     setCheckingBackend(true);
-    client
-      .get("/health")
-      .then(() => setBackendReady(true))
+    // health lives at root, not under /api/v1
+    fetch("http://localhost:8000/health")
+      .then((r) => { if (r.ok) setBackendReady(true); else setBackendReady(false); })
       .catch(() => setBackendReady(false))
       .finally(() => setCheckingBackend(false));
   };

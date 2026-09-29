@@ -3,16 +3,25 @@ import { Target, XCircle, Loader2 } from "lucide-react";
 import { useSessionStore } from "../../store/sessionStore";
 import { useJobStore } from "../../store/jobStore";
 import { useFindingsStore } from "../../store/findingsStore";
-import type { SessionPhase } from "../../api/sessions";
+import type { SessionStatus } from "../../api/sessions";
 
-const PHASES: SessionPhase[] = ["RECON", "SCAN", "EXPLOIT", "REPORT"];
+type UiPhase = "RECON" | "SCAN" | "EXPLOIT" | "REPORT";
 
-const PHASE_COLORS: Record<SessionPhase, string> = {
+const PHASES: UiPhase[] = ["RECON", "SCAN", "EXPLOIT", "REPORT"];
+
+const PHASE_COLORS: Record<UiPhase, string> = {
   RECON:   "text-blue-400 border-blue-400/50 bg-blue-900/20",
   SCAN:    "text-yellow-400 border-yellow-400/50 bg-yellow-900/20",
   EXPLOIT: "text-red-400 border-red-400/50 bg-red-900/20",
   REPORT:  "text-emerald-400 border-emerald-400/50 bg-emerald-900/20",
 };
+
+function statusToPhase(s: SessionStatus | undefined): UiPhase {
+  if (!s || s === "PENDING") return "RECON";
+  if (s === "RUNNING") return "SCAN";
+  if (s === "COMPLETED") return "REPORT";
+  return "SCAN";
+}
 
 export const TopBar: React.FC = () => {
   const session = useSessionStore((s) => s.currentSession);
@@ -21,7 +30,7 @@ export const TopBar: React.FC = () => {
   const findingsCount = useFindingsStore((s) => s.findings.length);
   const criticalCount = useFindingsStore((s) => s.countsBySeverity().CRITICAL);
 
-  const currentPhase: SessionPhase = session?.phase ?? "RECON";
+  const currentPhase: UiPhase = statusToPhase(session?.status);
   const phaseIndex = PHASES.indexOf(currentPhase);
 
   return (

@@ -2,7 +2,7 @@ import client from "./client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type JobStatus = "queued" | "running" | "completed" | "failed" | "killed";
+export type JobStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "KILLED";
 
 export interface Job {
   id: string;
@@ -10,12 +10,12 @@ export interface Job {
   tool_name: string;
   params: Record<string, unknown>;
   status: JobStatus;
+  output_path: string | null;
+  output_tail: string[] | null;
   started_at: string | null;
-  finished_at: string | null;
-  duration_ms: number | null;
+  ended_at: string | null;
+  created_at: string | null;
   findings_count: number;
-  exit_code: number | null;
-  error_message: string | null;
 }
 
 export interface CreateJobRequest {
@@ -37,7 +37,7 @@ export async function getJob(id: string): Promise<Job> {
 }
 
 export async function killJob(id: string): Promise<void> {
-  await client.post(`/jobs/${id}/kill`);
+  await client.delete(`/jobs/${id}`);
 }
 
 export async function listJobs(sessionId?: string): Promise<Job[]> {

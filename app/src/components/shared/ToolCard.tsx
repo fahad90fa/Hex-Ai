@@ -84,10 +84,12 @@ export const ToolCard: React.FC<ToolCardProps> = ({ tool, lastJob, onRun }) => {
   };
 
   const statusDot = lastJob
-    ? lastJob.status === "running"
+    ? lastJob.status === "RUNNING"
       ? "bg-yellow-400 animate-pulse-dot"
-      : lastJob.status === "completed"
+      : lastJob.status === "COMPLETED"
       ? "bg-emerald-400"
+      : lastJob.status === "KILLED"
+      ? "bg-orange-400"
       : "bg-red-400"
     : null;
 

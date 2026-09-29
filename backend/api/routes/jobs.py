@@ -5,7 +5,9 @@ import os
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +17,20 @@ from backend.db.models import Job, JobStatus
 from backend.shared_types import JobCreate, JobResponse
 
 router = APIRouter()
+
+
+@router.get("/jobs", response_model=list[JobResponse])
+async def list_jobs(
+    session_id: Optional[uuid.UUID] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> list[JobResponse]:
+    """List jobs, optionally filtered by session_id, newest first."""
+    q = select(Job)
+    if session_id:
+        q = q.where(Job.session_id == session_id)
+    q = q.order_by(Job.created_at.desc()).limit(200)
+    result = await db.execute(q)
+    return [_to_response(j, tail_lines=None) for j in result.scalars().all()]
 
 
 @router.post("/jobs", response_model=JobResponse, status_code=status.HTTP_201_CREATED)

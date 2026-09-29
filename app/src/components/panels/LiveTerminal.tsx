@@ -73,7 +73,7 @@ export const LiveTerminal: React.FC = () => {
   const clearOutput = useJobStore((s) => s.clearOutput);
 
   const activeJobs = jobs.filter(
-    (j) => j.status === "running" || j.status === "queued" || j.status === "completed" || j.status === "failed"
+    (j) => j.status === "RUNNING" || j.status === "QUEUED" || j.status === "COMPLETED" || j.status === "FAILED" || j.status === "KILLED"
   );
 
   const [activeJobId, setActiveJobId] = useState<string | null>(
@@ -187,9 +187,10 @@ export const LiveTerminal: React.FC = () => {
   };
 
   const statusColor = (job: Job) =>
-    job.status === "running"   ? "bg-yellow-400"
-    : job.status === "completed" ? "bg-emerald-400"
-    : job.status === "failed"    ? "bg-red-400"
+    job.status === "RUNNING"   ? "bg-yellow-400"
+    : job.status === "COMPLETED" ? "bg-emerald-400"
+    : job.status === "FAILED"    ? "bg-red-400"
+    : job.status === "KILLED"    ? "bg-orange-400"
     : "bg-gray-500";
 
   return (
