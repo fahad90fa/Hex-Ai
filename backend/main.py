@@ -21,7 +21,7 @@ from backend.api.routes import (
 )
 from backend.config import settings
 from backend.api.routes.ws import ws_hub
-from backend.core.orchestrator import WorkerPool
+from backend.core.orchestrator import WorkerPool, get_orchestrator
 from backend.db.session import init_db
 
 logger = logging.getLogger("nexus")
@@ -63,8 +63,9 @@ async def lifespan(app: FastAPI):
     app.state.neo4j = _neo4j_driver
     logger.info("Neo4j connected.")
 
-    # 4. Start worker pool
-    _worker_pool = WorkerPool(n_workers=10)
+    # 4. Start worker pool — use get_orchestrator() so every import shares this instance
+    _worker_pool = get_orchestrator()
+    _worker_pool.n_workers = 10
     await _worker_pool.start()
     app.state.worker_pool = _worker_pool
     logger.info("Worker pool started (10 workers).")

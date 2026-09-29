@@ -1,8 +1,11 @@
 """Session management routes."""
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
@@ -41,16 +44,14 @@ async def create_session(
     db.add(session)
     await db.flush()  # get the ID assigned
 
-    # Trigger AI brain asynchronously (fire-and-forget via background task)
+    # Trigger AI brain asynchronously (fire-and-forget)
     try:
-        from backend.core.orchestrator import worker_pool
-        from backend.ai.brain import run_session
-
         import asyncio
+        from backend.ai.brain import run_session
         asyncio.create_task(run_session(str(session.id), body.target))
-    except Exception:
+    except Exception as exc:
         # Non-fatal: session created, planning can be retried via /ai/plan
-        pass
+        logger.warning("AI brain failed to start for session %s: %s", session.id, exc)
 
     await db.refresh(session)
     return _to_response(session, jobs_count=0, findings_count=0)

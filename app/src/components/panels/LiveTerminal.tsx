@@ -65,6 +65,18 @@ function formatTimestamp(): string {
   return `[${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}]`;
 }
 
+// ─── Module-level pool — survives React component unmount/remount ─────────────
+// Keyed by job id. Terminals are lazily created and never disposed until the
+// user explicitly clears them so output is preserved across panel navigation.
+const _terminalPool = new Map<string, TermInstance>();
+
+function getOrCreatePooled(jobId: string): TermInstance {
+  if (!_terminalPool.has(jobId)) {
+    _terminalPool.set(jobId, createTerminal());
+  }
+  return _terminalPool.get(jobId)!;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const LiveTerminal: React.FC = () => {
@@ -82,7 +94,6 @@ export const LiveTerminal: React.FC = () => {
   const [searchVisible, setSearchVisible] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const termRefs = useRef<Map<string, TermInstance>>(new Map());
   const containerRef = useRef<HTMLDivElement>(null);
   const resizeObserverRef = useRef<ResizeObserver | null>(null);
 
@@ -93,27 +104,34 @@ export const LiveTerminal: React.FC = () => {
     }
   }, [activeJobs, activeJobId]);
 
-  // Get or create a terminal instance for a job
   const getOrCreate = useCallback((jobId: string): TermInstance => {
-    if (!termRefs.current.has(jobId)) {
-      termRefs.current.set(jobId, createTerminal());
-    }
-    return termRefs.current.get(jobId)!;
+    return getOrCreatePooled(jobId);
   }, []);
 
-  // Mount terminal into DOM when active job changes
+  // Mount / switch active terminal
   useEffect(() => {
     if (!activeJobId || !containerRef.current) return;
+    const container = containerRef.current;
+
+    // Detach all pooled terminals from DOM (hide them)
+    _terminalPool.forEach((other, id) => {
+      if (id !== activeJobId && other.xterm.element) {
+        other.xterm.element.style.display = "none";
+      }
+    });
 
     const inst = getOrCreate(activeJobId);
 
     if (!inst.xterm.element) {
-      inst.xterm.open(containerRef.current);
-    } else {
-      containerRef.current.appendChild(inst.xterm.element);
+      // First open — attach to container
+      inst.xterm.open(container);
+    } else if (!container.contains(inst.xterm.element)) {
+      // Remount after navigation — move element back into this container
+      container.appendChild(inst.xterm.element);
     }
+    if (inst.xterm.element) inst.xterm.element.style.display = "";
 
-    // Replay buffered lines
+    // Replay any buffered lines not yet written (e.g. arrived while navigated away)
     const buffered = jobOutputs[activeJobId] ?? [];
     if (inst.lineCount < buffered.length) {
       for (let i = inst.lineCount; i < buffered.length; i++) {
@@ -123,16 +141,6 @@ export const LiveTerminal: React.FC = () => {
     }
 
     setTimeout(() => inst.fit.fit(), 50);
-
-    // Hide other terminals
-    termRefs.current.forEach((other, id) => {
-      if (id !== activeJobId && other.xterm.element) {
-        other.xterm.element.style.display = "none";
-      }
-    });
-    if (inst.xterm.element) {
-      inst.xterm.element.style.display = "";
-    }
   }, [activeJobId, getOrCreate, jobOutputs]);
 
   // Stream new output lines
@@ -162,23 +170,21 @@ export const LiveTerminal: React.FC = () => {
     return () => ro.disconnect();
   }, [activeJobId]);
 
-  // Cleanup on unmount
+  // On unmount: just disconnect the ResizeObserver; terminal instances stay alive in _terminalPool
   useEffect(() => {
-    const refs = termRefs.current;
     return () => {
-      refs.forEach((inst) => inst.xterm.dispose());
-      refs.clear();
+      resizeObserverRef.current?.disconnect();
     };
   }, []);
 
   const handleSearch = () => {
     if (!activeJobId || !searchQuery) return;
-    termRefs.current.get(activeJobId)?.search.findNext(searchQuery);
+    _terminalPool.get(activeJobId)?.search.findNext(searchQuery);
   };
 
   const handleClear = () => {
     if (!activeJobId) return;
-    const inst = termRefs.current.get(activeJobId);
+    const inst = _terminalPool.get(activeJobId);
     if (inst) {
       inst.xterm.clear();
       inst.lineCount = 0;
@@ -242,7 +248,7 @@ export const LiveTerminal: React.FC = () => {
             className="rounded p-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
             onClick={() => {
               if (activeJobId) {
-                const inst = termRefs.current.get(activeJobId);
+                const inst = _terminalPool.get(activeJobId);
                 if (inst) inst.autoScroll = !inst.autoScroll;
               }
             }}

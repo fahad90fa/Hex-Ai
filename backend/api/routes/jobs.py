@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +36,7 @@ async def list_jobs(
 @router.post("/jobs", response_model=JobResponse, status_code=status.HTTP_201_CREATED)
 async def dispatch_job(
     body: JobCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> JobResponse:
     """Dispatch a tool job to the worker queue."""
@@ -49,11 +50,12 @@ async def dispatch_job(
     db.add(job)
     await db.flush()
 
-    # Enqueue in orchestrator
+    # Enqueue in orchestrator via app.state (set in lifespan)
     try:
-        from backend.core.orchestrator import worker_pool
-
-        await worker_pool.dispatch({
+        wp = getattr(request.app.state, "worker_pool", None)
+        if wp is None:
+            raise RuntimeError("Worker pool not initialised — backend may still be starting up")
+        await wp.dispatch({
             "job_id": str(job.id),
             "session_id": str(body.session_id),
             "tool_name": body.tool_name,
@@ -108,8 +110,8 @@ async def kill_job(
         raise HTTPException(status_code=409, detail=f"Job is already {job.status.value}")
 
     try:
-        from backend.core.orchestrator import worker_pool
-        await worker_pool.kill_job(str(job_id))
+        from backend.core.orchestrator import get_orchestrator
+        await get_orchestrator().kill_job(str(job_id))
     except Exception:
         pass  # Best effort
 
