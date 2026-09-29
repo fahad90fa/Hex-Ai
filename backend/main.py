@@ -16,6 +16,7 @@ from backend.api.routes import (
     jobs,
     reports,
     sessions,
+    tools,
     ws,
 )
 from backend.config import settings
@@ -126,6 +127,7 @@ def create_app() -> FastAPI:
     app.include_router(reports.router, prefix=api_prefix, tags=["reports"])
     app.include_router(graph.router, prefix=api_prefix, tags=["graph"])
     app.include_router(ai.router, prefix=api_prefix, tags=["ai"])
+    app.include_router(tools.router, prefix=api_prefix, tags=["tools"])
     app.include_router(ws.router, tags=["websocket"])
 
     # Health check
