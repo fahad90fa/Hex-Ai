@@ -17,11 +17,31 @@ interface UseFindings {
   stats: FindingsStats;
 }
 
+const SEVERITY_ORDER_HOOK: Record<Severity, number> = {
+  CRITICAL: 5, HIGH: 4, MEDIUM: 3, LOW: 2, INFO: 1,
+};
+
 export function useFindings(): UseFindings {
   const findings = useFindingsStore((s) => s.findings);
-  const filteredFindings = useFindingsStore((s) => s.filteredFindings);
+  const filter = useFindingsStore((s) => s.filter);
 
-  const filtered = filteredFindings();
+  const filtered = useMemo<Finding[]>(() =>
+    findings
+      .filter((f) => {
+        if (filter.severity && f.severity !== filter.severity) return false;
+        if (filter.tool && f.tool_name !== filter.tool) return false;
+        if (filter.asset && !f.affected_asset.includes(filter.asset)) return false;
+        if (filter.search) {
+          const q = filter.search.toLowerCase();
+          if (!f.title.toLowerCase().includes(q) && !f.description.toLowerCase().includes(q)) return false;
+        }
+        return true;
+      })
+      .sort((a, b) =>
+        SEVERITY_ORDER_HOOK[b.severity] - SEVERITY_ORDER_HOOK[a.severity] || b.cvss_score - a.cvss_score
+      ),
+    [findings, filter]
+  );
 
   const stats = useMemo<FindingsStats>(() => {
     const bySeverity: Record<Severity, number> = {

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Search, Filter, ExternalLink, ChevronDown, ChevronUp, Bug } from "lucide-react";
 import { useFindingsStore } from "../../store/findingsStore";
 import { SeverityBadge } from "../shared/SeverityBadge";
@@ -213,11 +213,33 @@ const Column: React.FC<ColumnProps> = ({ severity, findings, onSelect }) => {
 
 // ─── Main panel ───────────────────────────────────────────────────────────────
 
+const SEVERITY_ORDER: Record<Severity, number> = {
+  CRITICAL: 5, HIGH: 4, MEDIUM: 3, LOW: 2, INFO: 1,
+};
+
 export const FindingsBoard: React.FC = () => {
   const findings = useFindingsStore((s) => s.findings);
   const filter = useFindingsStore((s) => s.filter);
   const setFilter = useFindingsStore((s) => s.setFilter);
-  const filteredFindings = useFindingsStore((s) => s.filteredFindings());
+
+  // Stable derived array — never created inside a Zustand selector
+  const filteredFindings = useMemo(() =>
+    findings
+      .filter((f) => {
+        if (filter.severity && f.severity !== filter.severity) return false;
+        if (filter.tool && f.tool_name !== filter.tool) return false;
+        if (filter.asset && !f.affected_asset.includes(filter.asset)) return false;
+        if (filter.search) {
+          const q = filter.search.toLowerCase();
+          if (!f.title.toLowerCase().includes(q) && !f.description.toLowerCase().includes(q)) return false;
+        }
+        return true;
+      })
+      .sort((a, b) =>
+        SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity] || b.cvss_score - a.cvss_score
+      ),
+    [findings, filter]
+  );
 
   const [selectedFinding, setSelectedFinding] = useState<Finding | null>(null);
 

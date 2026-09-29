@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { FileText, Download, Loader2, BarChart3, Clock } from "lucide-react";
 import { useFindingsStore } from "../../store/findingsStore";
 import { useSessionStore } from "../../store/sessionStore";
@@ -31,9 +31,19 @@ const SEV_COLORS: Record<Severity, string> = {
 
 export const ReportEngine: React.FC = () => {
   const session = useSessionStore((s) => s.currentSession);
-  const counts = useFindingsStore((s) => s.countsBySeverity());
-  const total = useFindingsStore((s) => s.findings.length);
-  const topCvss = useFindingsStore((s) => s.topCvss());
+  const findings = useFindingsStore((s) => s.findings);
+  const total = findings.length;
+
+  const counts = useMemo<Record<Severity, number>>(() => {
+    const c: Record<Severity, number> = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
+    findings.forEach((f) => { c[f.severity] = (c[f.severity] ?? 0) + 1; });
+    return c;
+  }, [findings]);
+
+  const topCvss = useMemo(
+    () => [...findings].sort((a, b) => b.cvss_score - a.cvss_score).slice(0, 10),
+    [findings]
+  );
 
   const [template, setTemplate] = useState<Template>("technical");
   const [generating, setGenerating] = useState(false);

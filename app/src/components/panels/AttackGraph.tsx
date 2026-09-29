@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useMemo } from "react";
 import { ZoomIn, ZoomOut, Maximize2, RefreshCw, Tag } from "lucide-react";
 import { useGraphStore, NodeType, GraphNode } from "../../store/graphStore";
 import { useAttackGraph } from "../../hooks/useAttackGraph";
@@ -18,8 +18,23 @@ interface NodeDetailProps {
 }
 
 const NodeDetail: React.FC<NodeDetailProps> = ({ node }) => {
-  const connectedNodes = useGraphStore((s) => s.connectedNodes(node.id));
-  const edges = useGraphStore((s) => s.edgesBySource(node.id));
+  const allNodes = useGraphStore((s) => s.nodes);
+  const allEdges = useGraphStore((s) => s.edges);
+
+  const connectedNodes = useMemo(() => {
+    const ids = new Set<string>();
+    allEdges.forEach((e) => {
+      if (e.source === node.id) ids.add(e.target);
+      if (e.target === node.id) ids.add(e.source);
+    });
+    return allNodes.filter((n) => ids.has(n.id));
+  }, [allNodes, allEdges, node.id]);
+
+  const edges = useMemo(
+    () => allEdges.filter((e) => e.source === node.id),
+    [allEdges, node.id]
+  );
+
   const color = NODE_COLORS[node.type] ?? "#6b7280";
 
   return (
@@ -122,7 +137,12 @@ const Legend: React.FC = () => (
 
 export const AttackGraph: React.FC = () => {
   const selectNode = useGraphStore((s) => s.selectNode);
-  const selectedNode = useGraphStore((s) => s.selectedNode());
+  const selectedNodeId = useGraphStore((s) => s.selectedNodeId);
+  const allNodes = useGraphStore((s) => s.nodes);
+  const selectedNode = useMemo(
+    () => allNodes.find((n) => n.id === selectedNodeId) ?? null,
+    [allNodes, selectedNodeId]
+  );
 
   const handleNodeSelect = useCallback(
     (id: string | null) => selectNode(id),
