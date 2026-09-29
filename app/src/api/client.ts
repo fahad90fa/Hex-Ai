@@ -44,7 +44,7 @@ export function clearStoredSessionId(): void {
 // ─── Axios instance ───────────────────────────────────────────────────────────
 
 const client: AxiosInstance = axios.create({
-  baseURL: "http://localhost:8000",
+  baseURL: "http://localhost:8000/api/v1",
   timeout: 30_000,
   headers: {
     "Content-Type": "application/json",

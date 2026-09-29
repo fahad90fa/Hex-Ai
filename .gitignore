@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+ENV/
+.env
+*.env
+
+# Coverage / testing
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+nosetests.xml
+coverage.xml
+*.cover
+
+# Alembic
+backend/alembic/versions/*.pyc
+
+# Node / frontend
+node_modules/
+app/node_modules/
+dist/
+.parcel-cache/
+.next/
+.nuxt/
+.cache/
+
+# Tauri
+app/src-tauri/target/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data / logs
+data/
+*.log
+*.sqlite
+*.sqlite3
+
+# Secrets
+.env.local
+.env.*.local
+secrets.json

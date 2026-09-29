@@ -1,10 +1,14 @@
 """Session management routes."""
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime, timezone
 
+logger = logging.getLogger(__name__)
+
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +17,16 @@ from backend.db.models import Finding, Job, Session, SessionStatus
 from backend.shared_types import SessionCreate, SessionResponse
 
 router = APIRouter()
+
+
+@router.get("/sessions", response_model=list[SessionResponse])
+async def list_sessions(
+    db: AsyncSession = Depends(get_db),
+) -> list[SessionResponse]:
+    """List all sessions, newest first."""
+    result = await db.execute(select(Session).order_by(Session.created_at.desc()))
+    sessions = result.scalars().all()
+    return [_to_response(s, jobs_count=0, findings_count=0) for s in sessions]
 
 
 @router.post("/sessions", response_model=SessionResponse, status_code=status.HTTP_201_CREATED)
@@ -30,16 +44,14 @@ async def create_session(
     db.add(session)
     await db.flush()  # get the ID assigned
 
-    # Trigger AI brain asynchronously (fire-and-forget via background task)
+    # Trigger AI brain asynchronously (fire-and-forget)
     try:
-        from backend.core.orchestrator import worker_pool
-        from backend.ai.brain import run_session
-
         import asyncio
+        from backend.ai.brain import run_session
         asyncio.create_task(run_session(str(session.id), body.target))
-    except Exception:
+    except Exception as exc:
         # Non-fatal: session created, planning can be retried via /ai/plan
-        pass
+        logger.warning("AI brain failed to start for session %s: %s", session.id, exc)
 
     await db.refresh(session)
     return _to_response(session, jobs_count=0, findings_count=0)
@@ -69,11 +81,11 @@ async def get_session(
     return _to_response(session, jobs_count=jobs_count, findings_count=findings_count)
 
 
-@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 async def delete_session(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-) -> None:
+):
     """Stop and remove a session (cascades to jobs, findings, etc.)."""
     result = await db.execute(select(Session).where(Session.id == session_id))
     session = result.scalar_one_or_none()

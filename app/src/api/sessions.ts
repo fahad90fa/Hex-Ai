@@ -2,22 +2,30 @@ import client from "./client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type SessionPhase = "RECON" | "SCAN" | "EXPLOIT" | "REPORT";
+export type SessionStatus =
+  | "PENDING"
+  | "RUNNING"
+  | "PAUSED"
+  | "COMPLETED"
+  | "FAILED"
+  | "CANCELLED";
 
 export interface Session {
   id: string;
   target: string;
-  phase: SessionPhase;
-  created_at: string;
-  updated_at: string;
+  status: SessionStatus;
+  started_at: string | null;
+  ended_at: string | null;
+  created_at: string | null;
+  config: Record<string, unknown>;
   findings_count: number;
-  jobs_run: number;
-  coverage_pct: number;
+  jobs_count: number;
+  coverage_pct: number | null;
 }
 
 export interface CreateSessionRequest {
   target: string;
-  notes?: string;
+  config?: Record<string, unknown>;
 }
 
 // ─── API calls ────────────────────────────────────────────────────────────────
@@ -38,13 +46,5 @@ export async function deleteSession(id: string): Promise<void> {
 
 export async function listSessions(): Promise<Session[]> {
   const { data } = await client.get<Session[]>("/sessions");
-  return data;
-}
-
-export async function updateSessionPhase(
-  id: string,
-  phase: SessionPhase
-): Promise<Session> {
-  const { data } = await client.patch<Session>(`/sessions/${id}/phase`, { phase });
   return data;
 }

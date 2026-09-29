@@ -6,6 +6,7 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -96,11 +97,11 @@ async def update_finding(
     return _to_response(finding)
 
 
-@router.delete("/findings/{finding_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/findings/{finding_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 async def delete_finding(
     finding_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-) -> None:
+):
     """Delete a finding."""
     result = await db.execute(select(Finding).where(Finding.id == finding_id))
     finding = result.scalar_one_or_none()

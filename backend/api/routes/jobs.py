@@ -5,7 +5,10 @@ import os
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,9 +19,24 @@ from backend.shared_types import JobCreate, JobResponse
 router = APIRouter()
 
 
+@router.get("/jobs", response_model=list[JobResponse])
+async def list_jobs(
+    session_id: Optional[uuid.UUID] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+) -> list[JobResponse]:
+    """List jobs, optionally filtered by session_id, newest first."""
+    q = select(Job)
+    if session_id:
+        q = q.where(Job.session_id == session_id)
+    q = q.order_by(Job.created_at.desc()).limit(200)
+    result = await db.execute(q)
+    return [_to_response(j, tail_lines=None) for j in result.scalars().all()]
+
+
 @router.post("/jobs", response_model=JobResponse, status_code=status.HTTP_201_CREATED)
 async def dispatch_job(
     body: JobCreate,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> JobResponse:
     """Dispatch a tool job to the worker queue."""
@@ -32,11 +50,12 @@ async def dispatch_job(
     db.add(job)
     await db.flush()
 
-    # Enqueue in orchestrator
+    # Enqueue in orchestrator via app.state (set in lifespan)
     try:
-        from backend.core.orchestrator import worker_pool
-
-        await worker_pool.dispatch({
+        wp = getattr(request.app.state, "worker_pool", None)
+        if wp is None:
+            raise RuntimeError("Worker pool not initialised — backend may still be starting up")
+        await wp.dispatch({
             "job_id": str(job.id),
             "session_id": str(body.session_id),
             "tool_name": body.tool_name,
@@ -76,11 +95,11 @@ async def get_job(
     return _to_response(job, tail_lines=tail_lines)
 
 
-@router.delete("/jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 async def kill_job(
     job_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-) -> None:
+):
     """Kill a running job."""
     result = await db.execute(select(Job).where(Job.id == job_id))
     job = result.scalar_one_or_none()
@@ -91,8 +110,8 @@ async def kill_job(
         raise HTTPException(status_code=409, detail=f"Job is already {job.status.value}")
 
     try:
-        from backend.core.orchestrator import worker_pool
-        await worker_pool.kill_job(str(job_id))
+        from backend.core.orchestrator import get_orchestrator
+        await get_orchestrator().kill_job(str(job_id))
     except Exception:
         pass  # Best effort
 
