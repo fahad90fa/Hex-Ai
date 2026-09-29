@@ -281,5 +281,5 @@ class GraphEdge(Base):
     __table_args__ = (
         Index("ix_graph_edges_source_node_id", "source_node_id"),
         Index("ix_graph_edges_target_node_id", "target_node_id"),
-        Index("ix_graph_edges_relationship", "relationship"),
+        Index("ix_graph_edges_rel_type", "rel_type"),
     )
