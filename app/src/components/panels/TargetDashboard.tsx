@@ -40,8 +40,12 @@ interface Asset {
 
 export const TargetDashboard: React.FC = () => {
   const { currentSession, createSession, isConnecting } = useSessionStore();
-  const counts = useFindingsStore((s) => s.countsBySeverity());
   const allFindings = useFindingsStore((s) => s.findings);
+  const counts = React.useMemo<Record<Severity, number>>(() => {
+    const c: Record<Severity, number> = { CRITICAL: 0, HIGH: 0, MEDIUM: 0, LOW: 0, INFO: 0 };
+    allFindings.forEach((f) => { c[f.severity] = (c[f.severity] ?? 0) + 1; });
+    return c;
+  }, [allFindings]);
   const jobsRun = useJobStore((s) => s.jobs.length);
   const elapsed = useElapsed(currentSession?.created_at);
 
